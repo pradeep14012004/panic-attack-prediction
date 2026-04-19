@@ -1,43 +1,132 @@
-# PanicGuard — Panic Attack Detection & Intervention System
+NeuroCalm – Real-Time Panic Detection & Response System
 
-A modular, hardware-agnostic software stack for wearable panic attack detection.
-Runs on Raspberry Pi, Jetson Nano, ESP32 (MicroPython), or any POSIX system in simulation mode.
+NeuroCalm is an AI-powered wearable system that detects panic attacks early using physiological signals and automatically triggers calming interventions in real time.
 
-## Architecture
+It integrates biosensors, machine learning, and IoT to provide proactive mental health support.
 
-```
-panic_guard/
-├── core/           # Event bus, state machine, data pipeline
-├── sensors/        # Hardware-agnostic sensor drivers + simulators
-├── ml/             # Feature extraction + TinyML inference engine
-├── interventions/  # Haptic, audio, water-mist, LED, SOS actuators
-├── cloud/          # BLE bridge, MQTT/HTTP sync, caregiver dashboard API
-├── app/            # Companion app WebSocket server + REST API
-├── config/         # Per-user baseline profiles
-└── tests/          # Unit + integration tests with simulated signals
-```
+🚀 Features
+📡 Real-time biosignal monitoring (Heart Rate, GSR, Respiration)
+🤖 Multi-model AI detection system
+🔗 Intelligent fusion engine
+🔄 State-based system behavior
+🌿 Automated calming interventions
+📊 Live monitoring dashboard
+☁️ Cloud integration via MQTT
+🧩 System Architecture
+Sensors → Feature Extraction → AI Models → Fusion Engine → State Machine → Interventions
+                                              ↓
+                                       Dashboard / MQTT
 
-## Quickstart (simulation mode — no hardware needed)
+✔ Event-driven architecture (Event Bus)
+✔ Scalable & modular design
+✔ Easy to upgrade individual components
 
-```bash
-pip install -r requirements.txt
-python main.py --mode simulate --user demo_user
-```
+📡 Sensors
+Sensor	Frequency	Measures
+PPG	25 Hz	Heart rate, SpO2
+GSR	10 Hz	Skin conductance (stress)
+Respiration	5 Hz	Breathing patterns
+🧮 Feature Extraction
 
-## Hardware integration
+The system computes 13 physiological features, including:
 
-Set sensor backend in `config/device.yaml`:
-- `backend: simulate`   — synthetic biosignals (development)
-- `backend: max30102`   — PPG via I2C (Raspberry Pi)
-- `backend: serial`     — UART stream from Arduino/ESP32
-- `backend: ble`        — BLE characteristic polling
+HRV (Heart Rate Variability)
+RMSSD, SDNN
+LF/HF ratio
+Skin conductance level
+Breathing rate & irregularity
+Motion filtering
+Heart–respiration coupling
+🤖 Machine Learning Models
+1. Rule-Based Model
+Instant decision making
+No training required
+Clinically inspired thresholds
+2. Bi-LSTM + Attention
+Captures temporal dependencies
+High recall for panic detection
+Trained on WESAD dataset
+3. Autoencoder
+Anomaly detection model
+Trained on normal data only
+Detects unseen panic patterns
+4. Random Forest (HRV-based)
+Uses HRV features
+Fast and highly accurate on structured data
+📊 Model Accuracy Results
+🔹 HRV Random Forest
+Accuracy: 100%
+ROC-AUC: 1.0000
+Precision / Recall / F1: 100%
 
-## Intervention outputs
+📌 Dataset: HRV Stress Dataset (41,033 samples)
 
-| Intervention  | Interface       | Notes                              |
-|---------------|-----------------|-------------------------------------|
-| Haptic        | GPIO PWM / I2C  | DRV2605L or direct ERM motor        |
-| Water mist    | GPIO relay      | Pump on GPIO pin, timed pulse       |
-| Audio         | BLE A2DP / ALSA | Earbuds or onboard speaker          |
-| LED           | GPIO / I2C      | NeoPixel or simple LED ring         |
-| SOS           | HTTP / SMS      | Twilio or ntfy.sh push              |
+💡 Insight:
+Clean feature separation (RMSSD, LF/HF, pNN50) leads to near-perfect classification.
+
+⚠️ Note:
+Performance may vary in real-world noisy conditions.
+
+🔹 Bi-LSTM + Attention
+Accuracy: 94.5%
+ROC-AUC: 0.9845
+Class	Precision	Recall	F1
+Normal	1.00	0.93	0.96
+Stress	0.81	0.99	0.89
+
+💡 Key Insight:
+
+99% recall → almost zero missed panic events
+Designed for safety-first detection
+🔹 LSTM Autoencoder
+Accuracy: 79.5%
+ROC-AUC: 0.7677
+Class	Precision	Recall
+Normal	0.83	0.93
+Stress	0.57	0.31
+
+💡 Insight:
+
+Not a classifier
+Works as anomaly detector
+Detects unknown panic patterns
+🔗 Fusion Engine
+fusion_score = 0.50 × lstm
+             + 0.30 × anomaly
+             + 0.20 × rule
+Why Fusion?
+LSTM → temporal learning
+Autoencoder → anomaly detection
+Rule-based → fast baseline
+
+👉 Result: robust and reliable prediction
+
+🔄 State Machine
+State	Description
+IDLE	Normal condition
+ALERT	Early warning
+EPISODE	Panic detected
+SOS	Emergency alert
+COOLDOWN	Recovery phase
+🌿 Interventions
+Type	Action
+Haptic	Guided breathing vibrations
+Audio	Calming sounds
+Water Mist	Physiological calming effect
+LED	Visual status indication
+SOS	Emergency contact alert
+📊 Dashboard
+Real-time panic score
+Sensor readings
+Model outputs
+Episode logs
+WebSocket-based live updates
+☁️ Cloud Integration (MQTT Topics)
+panicguard/device-01/score
+panicguard/device-01/state
+panicguard/device-01/fusion
+panicguard/device-01/episode
+panicguard/device-01/status
+🧪 Datasets Used
+WESAD Dataset → Time-series physiological data
+HRV Stress Dataset → HRV feature dataset
