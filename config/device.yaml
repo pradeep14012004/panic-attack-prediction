@@ -1,0 +1,51 @@
+# config/device.yaml
+# PanicGuard device configuration
+
+sensor_backend: simulate   # simulate | max30102 | serial | ble
+
+ml:
+  backend: sklearn
+  model_path: models/hrv_panic_classifier.pkl
+  predictor:
+    lstm_path: models/bilstm.keras
+    autoencoder_path: models/autoencoder.keras
+    scaler_path: models/bilstm_scaler.pkl
+
+baseline:
+  hr_resting:    70.0
+  rmssd_resting: 50.0
+  scl_resting:   2.5
+  temp:          33.5
+
+# MQTT cloud bridge (set enabled: true to activate)
+mqtt:
+  enabled: false
+  broker: test.mosquitto.org   # free public test broker
+  port: 1883
+  device_id: panicguard-01
+  username: null               # set for private brokers
+  password: null
+  tls: false
+
+interventions:
+  haptic:
+    backend: simulate          # simulate | gpio | drv2605l
+    gpio_pin: 18
+  audio:
+    backend: simulate          # simulate | alsa | bluetooth
+    bt_device: null
+  water:
+    backend: simulate          # simulate | gpio
+    gpio_pin: 24
+    max_pulses_per_hour: 6
+  led:
+    backend: simulate          # simulate | neopixel
+    gpio_pin: 12
+    num_pixels: 12
+  sos:
+    backend: simulate          # simulate | ntfy | twilio
+    ntfy_topic: panic-guard-sos
+    contacts:
+      - name: "Emergency Contact 1"
+        phone: "+91XXXXXXXXXX"
+        ntfy_topic: "your-ntfy-topic"

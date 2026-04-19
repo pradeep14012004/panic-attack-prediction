@@ -1,0 +1,35 @@
+# ── Core AI / ML ──────────────────────────────────────────────────────────────
+numpy>=1.24.0
+scipy>=1.11.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+tensorflow>=2.14.0          # Bi-LSTM + Autoencoder training + Keras inference
+                            # On edge devices replace with: tflite-runtime>=2.14
+
+# ── Biosignal processing ───────────────────────────────────────────────────────
+neurokit2>=0.2.7            # HRV, EDA, respiration feature extraction
+
+# ── Backend API (Flask — as per architecture spec) ────────────────────────────
+flask>=3.0.0                # REST API backend for AI model serving
+flask-cors>=4.0.0           # Cross-origin for mobile app
+
+# ── Companion app (FastAPI WebSocket server) ───────────────────────────────────
+fastapi>=0.104.0
+uvicorn>=0.24.0
+websockets>=12.0
+pydantic>=2.0.0
+
+# ── Communication layer ────────────────────────────────────────────────────────
+paho-mqtt>=1.6.1            # MQTT streaming from ESP32 → backend
+asyncio-mqtt>=0.16.0        # Async MQTT wrapper for event bus integration
+httpx>=0.25.0               # SOS HTTP calls (Twilio / ntfy.sh)
+
+# ── Config / utilities ────────────────────────────────────────────────────────
+pyyaml>=6.0
+loguru>=0.7.0
+
+# ── Optional hardware backends (install only on target device) ─────────────────
+# smbus2>=0.4.3             # I2C for MAX30102 PPG sensor, DRV2605L haptic
+# RPi.GPIO>=0.7.1           # Raspberry Pi GPIO (water pump, LED ring)
+# bleak>=0.21.0             # BLE sensor polling
+# tflite-runtime>=2.14      # Lightweight TFLite inference (replaces tensorflow)

@@ -1,0 +1,16 @@
+HRV Stress Dataset - PanicGuard Classifier
+Features: ['MEAN_RR', 'MEDIAN_RR', 'SDRR', 'RMSSD', 'SDSD', 'SDRR_RMSSD', 'HR', 'pNN25', 'pNN50', 'SD1', 'SD2', 'KURT', 'SKEW', 'MEAN_REL_RR', 'MEDIAN_REL_RR', 'SDRR_REL_RR', 'RMSSD_REL_RR', 'SDSD_REL_RR', 'SDRR_RMSSD_REL_RR', 'KURT_REL_RR', 'SKEW_REL_RR', 'VLF', 'VLF_PCT', 'LF', 'LF_PCT', 'LF_NU', 'HF', 'HF_PCT', 'HF_NU', 'TP', 'LF_HF', 'HF_LF', 'sampen', 'higuci']
+
+              precision    recall  f1-score   support
+
+   no stress       1.00      1.00      1.00     22158
+      stress       1.00      1.00      1.00     18875
+
+    accuracy                           1.00     41033
+   macro avg       1.00      1.00      1.00     41033
+weighted avg       1.00      1.00      1.00     41033
+
+ROC-AUC: 1.0000
+Confusion matrix:
+[[22158     0]
+ [    0 18875]]
