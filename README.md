@@ -1,4 +1,4 @@
-# 🧠 NeuroCalm – Real-Time Panic Detection & Response System
+# 🧠 NeuroCalm – Real-Time Panic Detection, Prediction & Response System
 
 
 
