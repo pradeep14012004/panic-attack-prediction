@@ -9,6 +9,7 @@ ml:
   predictor:
     lstm_path: models/bilstm.keras
     autoencoder_path: models/autoencoder.keras
+    cnn_path: models/cnn.keras
     scaler_path: models/bilstm_scaler.pkl
 
 baseline:

@@ -40,6 +40,7 @@ def main():
     normal_csv   = os.path.join(args.data_dir,  "wesad_features_normal.csv")
     lstm_path    = os.path.join(args.model_dir, "bilstm.keras")
     ae_path      = os.path.join(args.model_dir, "autoencoder.keras")
+    cnn_path     = os.path.join(args.model_dir, "cnn.keras")
 
     # Step 1: Feature extraction
     if args.skip_extract and os.path.exists(features_csv):
@@ -57,12 +58,14 @@ def main():
     print("\n[Step 3] Training LSTM Autoencoder ->", ae_path)
     _train_autoencoder(normal_csv, ae_path, args.epochs, args.batch_size)
 
+    # Step 4: Train CNN
+    print("\n[Step 4] Training 1D CNN ->", cnn_path)
+    _train_cnn(features_csv, cnn_path, args.epochs, args.batch_size)
+
     print("\nTraining complete.")
     print("  Bi-LSTM    :", lstm_path)
     print("  Autoencoder:", ae_path)
-    print("\nTo use in PanicGuard, update config/device.yaml:")
-    print("  lstm_model_path:", lstm_path)
-    print("  autoencoder_path:", ae_path)
+    print("  CNN        :", cnn_path)
 
 
 def _train_bilstm(data_path: str, out_path: str, epochs: int, batch_size: int):
@@ -210,6 +213,80 @@ def _train_autoencoder(data_path: str, out_path: str, epochs: int, batch_size: i
     with open(tflite_path, "wb") as f:
         f.write(conv.convert())
     print("  TFLite saved:", tflite_path)
+
+
+def _train_cnn(data_path: str, out_path: str, epochs: int, batch_size: int):
+    import pickle
+    import numpy as np
+    import pandas as pd
+    import tensorflow as tf
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import classification_report, roc_auc_score
+    from ml.predictive_model import build_cnn
+    from ml.inference import FeatureVector
+    from ml.sequence_buffer import SEQ_LEN, N_FEATURES
+
+    df = pd.read_csv(data_path)
+    print(f"  Loaded {len(df)} windows  stress_ratio={df['label'].mean():.3f}")
+
+    scaler = pickle.load(open(out_path.replace("cnn.keras", "bilstm_scaler.pkl"), "rb"))
+    X_raw  = df[FeatureVector.FEATURE_NAMES].values.astype(np.float32)
+    y_raw  = df["label"].values.astype(np.float32)
+    X_sc   = scaler.transform(X_raw)
+    X_arr  = np.repeat(X_sc[:, np.newaxis, :], SEQ_LEN, axis=1).astype(np.float32)
+
+    X_tr, X_val, y_tr, y_val = train_test_split(
+        X_arr, y_raw, test_size=0.2, stratify=y_raw, random_state=42)
+
+    n_neg, n_pos = (y_tr == 0).sum(), (y_tr == 1).sum()
+    cw = {0: 1.0, 1: float(n_neg / max(n_pos, 1))}
+    print(f"  Class weights: {cw}")
+
+    model = build_cnn(seq_len=SEQ_LEN, n_features=N_FEATURES)
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(1e-3),
+        loss="binary_crossentropy",
+        metrics=[
+            "accuracy",
+            tf.keras.metrics.AUC(name="auc"),
+            tf.keras.metrics.Precision(name="precision"),
+            tf.keras.metrics.Recall(name="recall"),
+        ],
+    )
+    model.summary()
+
+    model.fit(
+        X_tr, y_tr,
+        validation_data=(X_val, y_val),
+        epochs=epochs,
+        batch_size=batch_size,
+        class_weight=cw,
+        callbacks=[
+            tf.keras.callbacks.EarlyStopping(
+                monitor="val_auc", patience=10, restore_best_weights=True, mode="max"),
+            tf.keras.callbacks.ReduceLROnPlateau(
+                monitor="val_loss", factor=0.5, patience=5, verbose=1),
+            tf.keras.callbacks.ModelCheckpoint(
+                out_path, save_best_only=True, monitor="val_auc", mode="max", verbose=1),
+        ],
+    )
+
+    y_prob = model.predict(X_val, verbose=0).flatten()
+    y_pred = (y_prob >= 0.5).astype(int)
+    print("\n  CNN Validation results:")
+    print(classification_report(y_val.astype(int), y_pred, target_names=["normal", "stress"]))
+    print(f"  ROC-AUC: {roc_auc_score(y_val, y_prob):.4f}")
+
+    tflite_path = out_path.replace(".keras", ".tflite")
+    conv = tf.lite.TFLiteConverter.from_keras_model(model)
+    conv.optimizations = [tf.lite.Optimize.DEFAULT]
+    conv.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS,
+        tf.lite.OpsSet.SELECT_TF_OPS,
+    ]
+    with open(tflite_path, "wb") as f:
+        f.write(conv.convert())
+    print("  CNN TFLite saved:", tflite_path)
 
 
 if __name__ == "__main__":

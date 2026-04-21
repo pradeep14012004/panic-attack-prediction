@@ -144,6 +144,74 @@ def build_autoencoder(seq_len: int = SEQ_LEN, n_features: int = N_FEATURES,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Model 3 — 1D CNN (local spike pattern detection)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_cnn(seq_len: int = SEQ_LEN, n_features: int = N_FEATURES,
+              dropout: float = 0.3):
+    """
+    Deep 1D CNN for panic detection.
+
+    Why CNN for biosignals?
+      - Detects LOCAL patterns: sudden HR spike, SCR burst, breathing fragmentation
+      - Faster than LSTM (no recurrence, fully parallelizable)
+      - Residual connections prevent vanishing gradients in deep networks
+      - Complementary to LSTM: CNN catches sharp transient events,
+        LSTM catches long-range temporal buildup
+
+    Architecture:
+      Input (batch, SEQ_LEN, N_FEATURES)
+        -> Conv block 1: Conv1D(64, k=3) + BN + ReLU + Dropout
+        -> Conv block 2: Conv1D(128, k=3) + BN + ReLU + Dropout  [residual]
+        -> Conv block 3: Conv1D(256, k=3) + BN + ReLU + Dropout  [residual]
+        -> GlobalMaxPool  (picks the most activated timestep per filter)
+        -> Dense(64, relu) -> Dropout -> Dense(1, sigmoid)
+
+    GlobalMaxPool vs GlobalAvgPool:
+      MaxPool keeps the PEAK activation — ideal for detecting spike events
+      (a single SCR burst or HR spike should fire the classifier)
+    """
+    import tensorflow as tf
+    from tensorflow.keras import layers
+
+    inp = tf.keras.Input(shape=(seq_len, n_features), name="cnn_input")
+
+    # Block 1
+    x = layers.Conv1D(64, kernel_size=3, padding="same", activation="relu")(inp)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dropout(dropout)(x)
+
+    # Block 2 with residual
+    res = layers.Conv1D(128, kernel_size=1, padding="same")(x)   # projection
+    x   = layers.Conv1D(128, kernel_size=3, padding="same", activation="relu")(x)
+    x   = layers.BatchNormalization()(x)
+    x   = layers.Dropout(dropout)(x)
+    x   = layers.Conv1D(128, kernel_size=3, padding="same")(x)
+    x   = layers.BatchNormalization()(x)
+    x   = layers.Add()([x, res])
+    x   = layers.Activation("relu")(x)
+
+    # Block 3 with residual
+    res = layers.Conv1D(256, kernel_size=1, padding="same")(x)
+    x   = layers.Conv1D(256, kernel_size=3, padding="same", activation="relu")(x)
+    x   = layers.BatchNormalization()(x)
+    x   = layers.Dropout(dropout)(x)
+    x   = layers.Conv1D(256, kernel_size=3, padding="same")(x)
+    x   = layers.BatchNormalization()(x)
+    x   = layers.Add()([x, res])
+    x   = layers.Activation("relu")(x)
+
+    # Global max pooling — captures peak activation (spike detection)
+    x = layers.GlobalMaxPooling1D()(x)
+
+    x   = layers.Dense(64, activation="relu")(x)
+    x   = layers.Dropout(dropout)(x)
+    out = layers.Dense(1, activation="sigmoid", name="cnn_panic_prob")(x)
+
+    return tf.keras.Model(inputs=inp, outputs=out, name="PanicCNN")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Rule-based fallback (no model needed — works on day 1)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -195,25 +263,30 @@ class FusionEngine:
     """
 
     # Default fusion thresholds (override via baseline config)
-    LSTM_THRESHOLD    = 0.55   # lowered — WESAD-trained model outputs moderate probs
+    LSTM_THRESHOLD    = 0.55
     ANOMALY_THRESHOLD = 0.50
-    W_LSTM            = 0.50   # Bi-LSTM weight
-    W_ANOMALY         = 0.30   # Autoencoder weight
-    W_RULE            = 0.20   # Rule-based weight
+    CNN_THRESHOLD     = 0.55
+    W_LSTM            = 0.40   # Bi-LSTM weight
+    W_CNN             = 0.25   # CNN weight
+    W_ANOMALY         = 0.20   # Autoencoder weight
+    W_RULE            = 0.15   # Rule-based weight
     SMOOTH_LEN        = 5
 
     def __init__(self, bus: EventBus,
-                 lstm_path:      str | None = None,
+                 lstm_path:        str | None = None,
                  autoencoder_path: str | None = None,
-                 scaler_path:    str | None = None,
-                 baseline:       dict | None = None):
+                 cnn_path:         str | None = None,
+                 scaler_path:      str | None = None,
+                 baseline:         dict | None = None):
         self.bus = bus
         self._seq_buf     = SequenceBuffer()
         self._lstm_scores: collections.deque = collections.deque(maxlen=self.SMOOTH_LEN)
         self._ae_scores:   collections.deque = collections.deque(maxlen=self.SMOOTH_LEN)
+        self._cnn_scores:  collections.deque = collections.deque(maxlen=self.SMOOTH_LEN)
 
         self._lstm_model = None
         self._ae_model   = None
+        self._cnn_model  = None
         self._scaler     = None
         self._ae_threshold = None
         self._backend    = "rules"
@@ -229,9 +302,11 @@ class FusionEngine:
             self._load_lstm(lstm_path, scaler_path)
         if autoencoder_path:
             self._load_autoencoder(autoencoder_path)
+        if cnn_path:
+            self._load_cnn(cnn_path)
 
         bus.subscribe(Topics.FEATURES,    self._on_features)
-        bus.subscribe(Topics.PANIC_SCORE, self._on_rule_score)  # capture rule score
+        bus.subscribe(Topics.PANIC_SCORE, self._on_rule_score)
         logger.info(f"[FusionEngine] started  backend={self._backend}  "
                     f"lstm_thr={self._lstm_thr:.2f}  ae_thr_mul={self._ae_thr_mul:.2f}")
 
@@ -285,6 +360,16 @@ class FusionEngine:
         interp.allocate_tensors()
         return interp
 
+    def _load_cnn(self, path: str):
+        if path.endswith(".tflite"):
+            self._cnn_model = self._load_tflite(path)
+        else:
+            import tensorflow as tf
+            import keras
+            keras.config.enable_unsafe_deserialization()
+            self._cnn_model = tf.keras.models.load_model(path)
+        logger.info(f"[FusionEngine] CNN loaded from {path}")
+
     # ── Rule score capture ────────────────────────────────────────────────────
 
     async def _on_rule_score(self, topic: str, score: float):
@@ -309,23 +394,28 @@ class FusionEngine:
 
         lstm_prob    = self._infer_lstm(seq)
         anomaly_norm = self._infer_autoencoder(seq)
+        cnn_prob     = self._infer_cnn(seq)
 
-        # Smooth both scores
+        # Smooth all scores
         self._lstm_scores.append(lstm_prob)
         self._ae_scores.append(anomaly_norm)
+        self._cnn_scores.append(cnn_prob)
         lstm_smooth = float(np.mean(self._lstm_scores))
         ae_smooth   = float(np.mean(self._ae_scores))
+        cnn_smooth  = float(np.mean(self._cnn_scores))
 
-        # Weighted fusion: 50% LSTM + 30% Anomaly + 20% Rule
+        # Weighted fusion: 40% LSTM + 25% CNN + 20% Anomaly + 15% Rule
         rule_score   = self._last_rule_score
-        fusion_score = (self.W_LSTM * lstm_smooth
-                        + self.W_ANOMALY * ae_smooth
-                        + self.W_RULE * rule_score)
+        fusion_score = (self.W_LSTM    * lstm_smooth
+                      + self.W_CNN     * cnn_smooth
+                      + self.W_ANOMALY * ae_smooth
+                      + self.W_RULE    * rule_score)
 
-        # Decision: HIGH if LSTM or anomaly fires, or fusion score is high
-        risk_high = (lstm_smooth   > self._lstm_thr) or \
-                    (ae_smooth     > self.ANOMALY_THRESHOLD * self._ae_thr_mul) or \
-                    (fusion_score  > 0.65)
+        # Decision: HIGH if any model fires or fusion is high
+        risk_high = (lstm_smooth  > self._lstm_thr) or \
+                    (cnn_smooth   > self.CNN_THRESHOLD) or \
+                    (ae_smooth    > self.ANOMALY_THRESHOLD * self._ae_thr_mul) or \
+                    (fusion_score > 0.60)
         risk_level = "HIGH" if risk_high else "LOW"
 
         logger.debug(
@@ -339,6 +429,7 @@ class FusionEngine:
             "level":   risk_level,
             "score":   round(fusion_score, 4),
             "lstm":    round(lstm_smooth,  4),
+            "cnn":     round(cnn_smooth,   4),
             "anomaly": round(ae_smooth,    4),
             "rule":    round(rule_score,   4),
             "timestamp": time.time(),
@@ -368,6 +459,20 @@ class FusionEngine:
                 logger.warning(f"[FusionEngine] LSTM error: {e}")
                 return 0.0
         return self._tflite_run(self._lstm_model, seq)
+
+    def _infer_cnn(self, seq: np.ndarray) -> float:
+        if self._cnn_model is None:
+            # Fallback: use z-score spike detection as CNN proxy
+            arr = seq[0]
+            spikes = np.abs((arr - arr.mean(axis=0)) / (arr.std(axis=0) + 1e-8))
+            return float(min(1.0, spikes.max(axis=0).mean() / 4.0))
+        if self._backend == "keras":
+            try:
+                return float(self._cnn_model.predict(seq, verbose=0)[0][0])
+            except Exception as e:
+                logger.warning(f"[FusionEngine] CNN error: {e}")
+                return 0.0
+        return self._tflite_run(self._cnn_model, seq)
 
     def _infer_autoencoder(self, seq: np.ndarray) -> float:
         if self._ae_model is None:

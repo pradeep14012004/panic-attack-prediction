@@ -54,11 +54,12 @@ async def run_simulation(panic_at: float = 15.0, duration: float = 90.0):
         model_path="models/hrv_panic_classifier.pkl",
     )
 
-    # Load trained Bi-LSTM + Autoencoder — now fully wired
+    # Load trained Bi-LSTM + CNN + Autoencoder — all fully wired
     fusion_engine = FusionEngine(
         bus,
         lstm_path="models/bilstm.keras",
         autoencoder_path="models/autoencoder.keras",
+        cnn_path="models/cnn.keras",
         scaler_path="models/bilstm_scaler.pkl",
     )
     interventions = create_intervention_suite(bus, {
@@ -142,6 +143,7 @@ async def run_hardware(config_path: str = "config/device.yaml"):
         bus,
         lstm_path=pred_cfg.get("lstm_path"),
         autoencoder_path=pred_cfg.get("autoencoder_path"),
+        cnn_path=pred_cfg.get("cnn_path"),
         scaler_path=pred_cfg.get("scaler_path"),
         baseline=config.get("baseline", {}),
     )
